@@ -26,12 +26,22 @@ def norm_key(s):
 @st.cache_data
 def load_all_data():
     # 1. Carga de Defunciones (Uso de ruta relativa para portabilidad)
-    path_def = (r"C:DEFUNCIONES_FUENTE_DEIS_2023_2026_07012026.csv")
-    df = pd.read_csv(path_def, sep=";", encoding="latin1", low_memory=False)
+    file_id = "1WTUxtHFCXPSNgABeFdzfDpJDC1tyR4xm"
+    url = f"https://drive.google.com/uc?id={file_id}"
+
+    df = pd.read_csv(
+        url,
+        sep=";",
+        encoding="latin1",
+        low_memory=False
+    )
     
     # 2. Carga de Censo (Excel)
-    path_pobl = (r"C:D1_Poblacion-censada-por-sexo-y-edad-en-grupos-quinquenales.xlsx")
-    df_pobl = pd.read_excel(path_pobl, sheet_name=1, header=3)
+    df_pobl = pd.read_excel(
+        "D1_Poblacion-censada-por-sexo-y-edad-en-grupos-quinquenales.xlsx",
+        sheet_name=1,
+        header=3
+    )
     
     # --- Limpieza de Defunciones ---
     cols_to_drop = df.columns[df.isna().sum() > 1000]
@@ -348,3 +358,4 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
+
