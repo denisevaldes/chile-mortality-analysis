@@ -43,10 +43,13 @@ def load_all_data():
         header=3
     )
     
+    st.subheader("Columnas detectadas")
+    st.write(list(df.columns))
+
     # --- Limpieza de Defunciones ---
     cols_to_drop = df.columns[df.isna().sum() > 1000]
     df = df.drop(columns=cols_to_drop)
-    df = df[df["AÑO"] <= 2025]
+    df = df[df["ANO"] <= 2025]
     df = df[df["NOMBRE_REGION"] != "Ignorada"]
     
     # --- Limpieza de Censo ---
