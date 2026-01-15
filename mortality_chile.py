@@ -6,6 +6,8 @@ import plotly.express as px
 import unicodedata
 import re
 import numpy as np
+import os
+import gdown
 
 # Configuración de página para que se vea profesional
 st.set_page_config(page_title="Chile Mortality Analysis", layout="wide")
@@ -23,18 +25,34 @@ def norm_key(s):
     s = s.replace(".", "").replace("'", "").replace("-", " ")
     return " ".join(s.split())
 
+def normalize_col(col):
+    col = str(col).strip()
+    col = unicodedata.normalize("NFKD", col)
+    col = "".join(c for c in col if not unicodedata.combining(c))
+    return col.upper()
+
+FILE_ID = "1WTUxtHFCXPSNgABeFdzfDpJDC1tyR4xm"
+URL = f"https://drive.google.com/uc?id={FILE_ID}"
+
 @st.cache_data
 def load_all_data():
-    # 1. Carga de Defunciones (Uso de ruta relativa para portabilidad)
-    file_id = "1WTUxtHFCXPSNgABeFdzfDpJDC1tyR4xm"
-    url = f"https://drive.google.com/uc?id={file_id}"
+    # ==== 1. DEFUNCIONES (CSV grande desde Drive) ====
+    FILE_ID_DEF = "1WTUxtHFCXPSNgABeFdzfDpJDC1tyR4xm"
+    URL_DEF = f"https://drive.google.com/uc?id={FILE_ID_DEF}"
+    PATH_DEF = "defunciones.csv"
+
+    if not os.path.exists(PATH_DEF):
+        gdown.download(URL_DEF, PATH_DEF, quiet=False)
 
     df = pd.read_csv(
-        url,
+        PATH_DEF,
         sep=";",
         encoding="latin1",
         low_memory=False
     )
+
+    # Normalizar columnas (CRÍTICO)
+    df.columns = [normalize_col(c) for c in df.columns]
     
     # 2. Carga de Censo (Excel)
     df_pobl = pd.read_excel(
@@ -49,7 +67,8 @@ def load_all_data():
     # --- Limpieza de Defunciones ---
     cols_to_drop = df.columns[df.isna().sum() > 1000]
     df = df.drop(columns=cols_to_drop)
-    df = df[df["ANO"] <= 2025]
+    df["ANO"] = pd.to_numeric(df["ANO"], errors="coerce")
+    df = df[df["ANO"].notna() & (df["ANO"] <= 2025)]
     df = df[df["NOMBRE_REGION"] != "Ignorada"]
     
     # --- Limpieza de Censo ---
