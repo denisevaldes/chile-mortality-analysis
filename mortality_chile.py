@@ -8,6 +8,7 @@ import re
 import numpy as np
 import os
 import gdown
+import plotly.graph_objects as go   
 
 # Configuración de página para que se vea profesional
 st.set_page_config(page_title="Chile Mortality Analysis", layout="wide")
@@ -60,9 +61,6 @@ def load_all_data():
         sheet_name=1,
         header=3
     )
-    
-    st.subheader("Columnas detectadas")
-    st.write(list(df.columns))
 
     # --- Limpieza de Defunciones ---
     cols_to_drop = df.columns[df.isna().sum() > 1000]
@@ -85,6 +83,15 @@ def load_all_data():
         elif tipo == 2: return cant / 12
         else: return cant / 365
     df['AGE_YEARS'] = df.apply(calcular_edad, axis=1)
+
+    # --- Create age in years (EDAD_ANOS) and age group (TRAMO_ETARIO) ---
+    df["EDAD_ANOS"] = df["AGE_YEARS"]  # reuse what you already computed
+
+    bins = [0, 1, 15, 30, 45, 60, 75, 90, 120]
+    labels = ['<1 year', '1-14', '15-29', '30-44', '45-59', '60-74', '75-89', '90+']
+
+    df["TRAMO_ETARIO"] = pd.cut(df["EDAD_ANOS"], bins=bins, labels=labels, right=False)
+
     
     gender_map = {"Hombre": "Male", "Mujer": "Female", "Indeterminado": "Undetermined"}
     df['GENDER'] = df['SEXO_NOMBRE'].map(gender_map)
@@ -112,6 +119,24 @@ TOP_N = st.sidebar.slider(
     value=8,
     step=1
 )
+
+st.sidebar.subheader("Age pyramid settings")
+
+year_opt = st.sidebar.multiselect(
+    "Select year(s)",
+    options=sorted(df["ANO"].unique()),
+    default=sorted(df["ANO"].unique())
+)
+
+sort_order = st.sidebar.selectbox(
+    "Age order",
+    options=["Youngest to oldest", "Oldest to youngest"],
+    index=0
+)
+
+# Filter dataset by selected years for age pyramid
+df_filtered_year = df_filtered[df_filtered["ANO"].isin(year_opt)]
+
 # --- UI PRINCIPAL ---
 st.title("Mortality Trends in Chile (2023-2025)")
 st.markdown("Analysis based on Ministry of Health (DEIS) records and Census 2024 population data.")
@@ -273,6 +298,7 @@ def build_choropleth_figure(df_region, chile_geojson):
         locations="REGION_GEO",
         featureidkey="properties.Region",
         color="RATE_100K",
+        color_continuous_scale="PuBu",
         hover_name="NOMBRE_REGION",
         hover_data={
             "DEATHS": True,
@@ -380,4 +406,169 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
+# --- AGE PYRAMID (Place this after you create df_filtered_year and sidebar controls) ---
+# Requirements:
+# - df_filtered_year exists (already filtered by gender + year)
+# - df_filtered_year has columns: TRAMO_ETARIO, GENDER, and optionally SEXO_NOMBRE if you use it
+# - sidebar variables exist: sort_order (string) and show_undetermined (bool)
+st.subheader("Mortality age pyramid (2023–2025)")
 
+# 1) Start from the already-filtered dataframe (IMPORTANT)
+df_pyr = df_filtered_year.copy()
+
+# 3) Define the epidemiologically correct age order (DO NOT use sorted())
+AGE_ORDER = [
+    "<1 year", "1-14", "15-29", "30-44",
+    "45-59", "60-74", "75-89", "90+"
+]
+
+# 4) Aggregate deaths by age group and gender
+df_pyramid = (
+    df_pyr
+    .dropna(subset=["TRAMO_ETARIO", "GENDER"])
+    .groupby(["TRAMO_ETARIO", "GENDER"], observed=False)
+    .size()
+    .reset_index(name="DEATHS")
+)
+
+# 5) Force categorical ordering (CRITICAL)
+df_pyramid["TRAMO_ETARIO"] = pd.Categorical(
+    df_pyramid["TRAMO_ETARIO"],
+    categories=AGE_ORDER,
+    ordered=True
+)
+
+# 6) Sidebar-controlled direction
+age_order = AGE_ORDER[::-1] if sort_order == "Oldest to youngest" else AGE_ORDER
+
+# 7) Split by gender (English labels)
+male = df_pyramid[df_pyramid["GENDER"] == "Male"].sort_values("TRAMO_ETARIO")
+female = df_pyramid[df_pyramid["GENDER"] == "Female"].sort_values("TRAMO_ETARIO")
+
+# 8) Build the pyramid figure
+fig = go.Figure()
+
+fig.add_trace(go.Bar(
+    y=male["TRAMO_ETARIO"],
+    x=-male["DEATHS"],
+    name="Male",
+    orientation="h",
+    customdata=male["DEATHS"],
+    hovertemplate=(
+        "<b>Age group:</b> %{y}<br>"
+        "<b>Gender:</b> Male<br>"
+        "<b>Deaths:</b> %{customdata:,}<extra></extra>"
+    )
+))
+
+fig.add_trace(go.Bar(
+    y=female["TRAMO_ETARIO"],
+    x=female["DEATHS"],
+    name="Female",
+    orientation="h",
+    customdata=female["DEATHS"],
+    hovertemplate=(
+        "<b>Age group:</b> %{y}<br>"
+        "<b>Gender:</b> Female<br>"
+        "<b>Deaths:</b> %{customdata:,}"
+        "<extra></extra>"
+    )
+))
+
+# 9) Make x-axis show absolute values
+max_x = max(
+    male["DEATHS"].max() if len(male) else 0,
+    female["DEATHS"].max() if len(female) else 0
+)
+
+fig.update_layout(
+    title="Mortality age pyramid by sex",
+    barmode="relative",
+    bargap=0.1,
+    xaxis=dict(
+        title="Number of deaths",
+        range=[-max_x * 1.1, max_x * 1.1],
+        tickvals=[-max_x, -max_x/2, 0, max_x/2, max_x],
+        ticktext=[f"{int(max_x)}", f"{int(max_x/2)}", "0", f"{int(max_x/2)}", f"{int(max_x)}"]
+    ),
+    yaxis=dict(
+        title="Age group",
+        categoryorder="array",
+        categoryarray=age_order   # CRITICAL: force the order you want
+    ),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    margin=dict(l=0, r=0, t=60, b=0),
+    height=700
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+# --- TOP CAUSES OF DEATH BY GENDER ---
+
+st.subheader("Top causes of death by sex (Top 5)")
+
+df_base = df_filtered_year.dropna(subset=["SEXO_NOMBRE", "GLOSA_SUBCATEGORIA_DIAG1"]).copy()
+
+top_male = (
+    df_base[df_base["SEXO_NOMBRE"] == "Hombre"]
+    .groupby("GLOSA_SUBCATEGORIA_DIAG1")
+    .size()
+    .reset_index(name="DEATHS")
+    .sort_values("DEATHS", ascending=False)
+    .head(5)
+    .sort_values("DEATHS", ascending=True)
+)
+
+top_female = (
+    df_base[df_base["SEXO_NOMBRE"] == "Mujer"]
+    .groupby("GLOSA_SUBCATEGORIA_DIAG1")
+    .size()
+    .reset_index(name="DEATHS")
+    .sort_values("DEATHS", ascending=False)
+    .head(5)
+    .sort_values("DEATHS", ascending=True)
+)
+
+tab_male, tab_female = st.tabs(["Male", "Female"])
+
+with tab_male:
+    fig_m = px.bar(
+        top_male,
+        x="DEATHS",
+        y="GLOSA_SUBCATEGORIA_DIAG1",
+        orientation="h",
+        title="Male — Top 5 causes",
+        labels={"GLOSA_SUBCATEGORIA_DIAG1": "", "DEATHS": "Deaths"},
+        template="plotly_white",
+        height=600
+    )
+    fig_m.update_layout(
+        title=dict(font=dict(size=22)),
+        font=dict(size=16),
+        margin=dict(l=340, r=20, t=80, b=40)
+    )
+    fig_m.update_yaxes(tickfont=dict(size=16))
+    fig_m.update_xaxes(title_font=dict(size=16), tickfont=dict(size=14))
+
+    st.plotly_chart(fig_m, use_container_width=True)
+
+with tab_female:
+    fig_f = px.bar(
+        top_female,
+        x="DEATHS",
+        y="GLOSA_SUBCATEGORIA_DIAG1",
+        orientation="h",
+        title="Female — Top 5 causes",
+        labels={"GLOSA_SUBCATEGORIA_DIAG1": "", "DEATHS": "Deaths"},
+        template="plotly_white",
+        height=600
+    )
+    fig_f.update_layout(
+        title=dict(font=dict(size=22)),
+        font=dict(size=16),
+        margin=dict(l=340, r=20, t=80, b=40)
+    )
+    fig_f.update_yaxes(tickfont=dict(size=16))
+    fig_f.update_xaxes(title_font=dict(size=16), tickfont=dict(size=14))
+
+    st.plotly_chart(fig_f, use_container_width=True)
