@@ -292,7 +292,7 @@ def build_choropleth_figure(df_region, chile_geojson):
     """
     Plotly choropleth for Streamlit. Uses mapbox version (more compatible).
     """
-    fig = px.choropleth_mapbox(
+    fig = px.choropleth_map(
         df_region,
         geojson=chile_geojson,
         locations="REGION_GEO",
