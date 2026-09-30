@@ -309,19 +309,19 @@ def build_choropleth_figure(df_region, chile_geojson):
         },
         center={"lat": -35, "lon": -71},
         zoom=3.3,
-        mapbox_style="carto-positron",
+        map_style="carto-positron",
         title="Death rate per 100,000 population by region (2023–2025)"
     )
 
     fig.update_layout(
-    height=1000,              # Aumentamos el alto para estirar el país
-    width=450,               # Reducimos el ancho para que sea una franja vertical
-    margin=dict(l=10, r=10, t=50, b=10),
-    mapbox=dict(
-        center={"lat": -35.6, "lon": -71.5}, # Centrado en la zona central de Chile
-        zoom=3.8,            # Zoom ideal para ver todo el territorio
-        style="carto-positron"
-    )
+        height=1000,              # Aumentamos el alto para estirar el país
+        width=450,                # Reducimos el ancho para que sea una franja vertical
+        margin=dict(l=10, r=10, t=50, b=10),
+        map=dict(                 # <--- ¡AQUÍ ESTABA EL DETALLE! Cambiado de mapbox a map
+            center={"lat": -35.6, "lon": -71.5}, # Centrado en la zona central de Chile
+            zoom=3.8,             # Zoom ideal para ver todo el territorio
+            style="carto-positron"
+        )
     )
     return fig
 
